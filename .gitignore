@@ -9,3 +9,4 @@ bm25_index.pkl*
 incident_embeddings_backup.parquet
 data/incident_embeddings_backup.parquet
 data/incident_resolution_embeddings_backup.parquet
+source/vector_db/bm25_index_incident_response_v2.pkl
