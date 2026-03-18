@@ -1,6 +1,0 @@
-pymilvus
-pandas
-psycopg2
-rank_bm25
-openai-agents[sqlalchemy]
-pyarrow
