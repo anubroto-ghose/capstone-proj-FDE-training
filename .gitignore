@@ -5,5 +5,7 @@ node_modules/
 .env.tests*
 volumes/
 bm25_index.pkl*
+
 incident_embeddings_backup.parquet
 data/incident_embeddings_backup.parquet
+data/incident_resolution_embeddings_backup.parquet

@@ -25,13 +25,13 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
 
-CSV_PATH = PROJECT_ROOT / "data" / "incident_response_dataset_150_rows.xlsx - Incident Data.csv"
-BACKUP_PATH = PROJECT_ROOT / "data" / "incident_resolution_embeddings_backup.parquet"
+CSV_PATH = PROJECT_ROOT / "data" / "ITSM_data.csv"
+BACKUP_PATH = PROJECT_ROOT / "data" / "incident_embeddings_backup.parquet"
 
 MILVUS_HOST = "localhost"
 MILVUS_PORT = "19530"
 
-COLLECTION_NAME = "incident_response_vectors"
+COLLECTION_NAME = "incident_vectors"
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 
@@ -86,36 +86,30 @@ fields = [
     ),
 
     FieldSchema(
-        name="media_asset",
-        dtype=DataType.VARCHAR,
-        max_length=100
+        name="priority",
+        dtype=DataType.INT64
+    ),
+
+    FieldSchema(
+        name="impact",
+        dtype=DataType.INT64
     ),
 
     FieldSchema(
         name="category",
         dtype=DataType.VARCHAR,
-        max_length=100
+        max_length=50
     ),
 
     FieldSchema(
-        name="ticket_id",
+        name="resolved",
+        dtype=DataType.BOOL
+    ),
+
+    FieldSchema(
+        name="incident_date",
         dtype=DataType.VARCHAR,
         max_length=50
-    ),
-    FieldSchema(
-        name="incident_details",
-        dtype=DataType.VARCHAR,
-        max_length=2000
-    ),
-    FieldSchema(
-        name="description",
-        dtype=DataType.VARCHAR,
-        max_length=2000
-    ),
-    FieldSchema(
-        name="solution",
-        dtype=DataType.VARCHAR,
-        max_length=2000
     ),
 
     FieldSchema(
@@ -166,21 +160,15 @@ print(f"Loaded {len(df)} incidents")
 # ==============================
 
 def build_text(row):
-    def pick(*keys, default=""):
-        for key in keys:
-            value = row.get(key)
-            if pd.notna(value) and str(value).strip() != "":
-                return str(value)
-        return default
 
     text = f"""
-    Media asset {pick("Media Asset")}.
-    Incident category {pick("Category")}.
-    Ticket ID {pick("Ticket ID")}.
-    Incident ID {pick("Incident ID")}.
-    Incident details {pick("Incident Details")}.
-    Description {pick("Description")}.
-    Resolution {pick("Solution")}.
+    Incident in category {row.get("Category", "")}.
+    Configuration item category {row.get("CI_Cat", "")}.
+    Subcategory {row.get("CI_Subcat", "")}.
+    Impact level {row.get("Impact", "")}.
+    Urgency level {row.get("Urgency", "")}.
+    Priority level {row.get("Priority", "")}.
+    Closure code {row.get("Closure_Code", "")}.
     """
 
     return text.strip()
@@ -220,44 +208,53 @@ for i in range(0, len(df), BATCH_SIZE):
 
     texts = []
     incident_ids = []
-    media_assets = []
+    priorities = []
+    impacts = []
     categories = []
-    ticket_ids = []
-    incident_details_list = []
-    descriptions = []
-    solutions = []
+    resolved_flags = []
+    incident_dates = []
 
     for _, row in batch.iterrows():
-        def pick(*keys, default=""):
-            for key in keys:
-                value = row.get(key)
-                if pd.notna(value) and str(value).strip() != "":
-                    return str(value)
-            return default
 
         text = build_text(row)
 
         texts.append(text)
 
-        incident_ids.append(pick("Incident ID"))
+        incident_ids.append(str(row.get("Incident_ID", "")))
 
-        media_assets.append(pick("Media Asset"))
-        categories.append(pick("Category"))
-        ticket_ids.append(pick("Ticket ID"))
-        incident_details_list.append(pick("Incident Details"))
-        descriptions.append(pick("Description"))
-        solutions.append(pick("Solution"))
+        try:
+            priorities.append(int(row.get("Priority", 0)))
+        except:
+            priorities.append(0)
+
+        try:
+            impacts.append(int(row.get("Impact", 0)))
+        except:
+            impacts.append(0)
+
+        categories.append(str(row.get("Category", "")))
+
+        # Determine if resolved
+        status = str(row.get("Status", "")).lower()
+        is_resolved = status in ["closed", "resolved", "complete"]
+        resolved_flags.append(is_resolved)
+
+        # Better date extraction
+        raw_date = row.get("Resolved_Time")
+        if pd.isna(raw_date):
+            raw_date = row.get("Open_Time")
+        
+        incident_dates.append(str(raw_date) if not pd.isna(raw_date) else "")
 
     embeddings = generate_embeddings(texts)
 
     collection.insert([
         incident_ids,
-        media_assets,
+        priorities,
+        impacts,
         categories,
-        ticket_ids,
-        incident_details_list,
-        descriptions,
-        solutions,
+        resolved_flags,
+        incident_dates,
         embeddings
     ])
 
@@ -265,12 +262,11 @@ for i in range(0, len(df), BATCH_SIZE):
 
         backup_rows.append({
             "incident_id": incident_ids[j],
-            "media_asset": media_assets[j],
+            "priority": priorities[j],
+            "impact": impacts[j],
             "category": categories[j],
-            "ticket_id": ticket_ids[j],
-            "incident_details": incident_details_list[j],
-            "description": descriptions[j],
-            "solution": solutions[j],
+            "resolved": resolved_flags[j],
+            "incident_date": incident_dates[j],
             "embedding": embeddings[j]
         })
 

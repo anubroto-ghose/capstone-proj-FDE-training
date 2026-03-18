@@ -13,8 +13,8 @@ from tqdm import tqdm
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
 
-CSV_PATH = PROJECT_ROOT / "data" / "incident_response_dataset_150_rows.xlsx - Incident Data.csv"
-INDEX_PATH = PROJECT_ROOT / "vector_db" / "bm25_index_incident_response_v2.pkl"
+CSV_PATH = PROJECT_ROOT / "data" / "ITSM_data.csv"
+INDEX_PATH = PROJECT_ROOT / "vector_db" / "bm25_index.pkl"
 
 
 # ==============================
@@ -50,30 +50,23 @@ incident_ids = []
 
 print("Building BM25 documents...")
 
-def pick(row, *keys, default=""):
-    for key in keys:
-        value = row.get(key)
-        if pd.notna(value) and str(value).strip() != "":
-            return str(value)
-    return default
-
 for _, row in tqdm(df.iterrows(), total=len(df)):
 
     text = f"""
-    media asset {pick(row, "Media Asset")}
-    incident category {pick(row, "Category")}
-    ticket id {pick(row, "Ticket ID")}
-    incident id {pick(row, "Incident ID")}
-    incident details {pick(row, "Incident Details")}
-    description {pick(row, "Description")}
-    solution {pick(row, "Solution")}
+    incident category {row.get("Category","")}
+    configuration item {row.get("CI_Cat","")}
+    subcategory {row.get("CI_Subcat","")}
+    priority {row.get("Priority","")}
+    impact {row.get("Impact","")}
+    urgency {row.get("Urgency","")}
+    closure code {row.get("Closure_Code","")}
     """
 
     text = normalize_text(text)
 
     documents.append(text.split())
 
-    incident_ids.append(pick(row, "Incident ID"))
+    incident_ids.append(str(row.get("Incident_ID","")))
 
 
 # ==============================

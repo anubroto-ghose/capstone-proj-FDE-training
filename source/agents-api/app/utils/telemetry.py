@@ -1,7 +1,10 @@
 import os
-from langsmith import Client, wrappers
+from langsmith import Client
 from dotenv import load_dotenv
 import openai
+from agents import set_trace_processors
+from langsmith.integrations.openai_agents_sdk import OpenAIAgentsTracingProcessor
+
 
 load_dotenv()
 
@@ -12,9 +15,22 @@ os.environ["LANGCHAIN_PROJECT"] = "IT-Incident-Assistant"
 
 client = Client()
 
-# Globally wrap the OpenAI clients for automatic multi-agent tracing
-traced_client = wrappers.wrap_openai(openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY")))
-traced_async_client = wrappers.wrap_openai(openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")))
+# Enable detailed tracing for OpenAI Agents SDK runs (agent turns, handoffs, tool/model spans).
+try:
+    set_trace_processors([
+        OpenAIAgentsTracingProcessor(
+            client=client,
+            project_name="IT-Incident-Assistant",
+            metadata={"service": "agents-api"},
+        )
+    ])
+except Exception:
+    # Keep service running even if tracing processor setup fails.
+    pass
+
+# OpenAI clients used across tools/services. Higher-level run tracing remains via @traceable.
+traced_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+traced_async_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def track_cost(model: str, input_tokens: int, output_tokens: int):
     """Basic cost tracking logic."""

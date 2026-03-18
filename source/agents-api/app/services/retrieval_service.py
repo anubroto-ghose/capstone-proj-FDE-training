@@ -5,7 +5,6 @@ from pymilvus import connections, Collection
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import re
-from datetime import datetime, timezone
 import pandas as pd
 import psycopg2
 from dotenv import load_dotenv
@@ -15,24 +14,11 @@ from ..utils.telemetry import traced_client
 load_dotenv()
 
 # ── Milvus schema reference ────────────────────────────────────────────────────
-# Fields in `incident_vectors` collection:
-#   id (INT64, PK), incident_id (VARCHAR), priority (INT64),
-#   impact (INT64), category (VARCHAR), resolved (BOOL),
-#   incident_date (VARCHAR), embedding (FLOAT_VECTOR)
+# Fields in `incident_response_vectors` collection:
+#   id (INT64, PK), incident_id (VARCHAR), media_asset (VARCHAR),
+#   category (VARCHAR), ticket_id (VARCHAR), incident_details (VARCHAR),
+#   description (VARCHAR), solution (VARCHAR), embedding (FLOAT_VECTOR)
 # ───────────────────────────────────────────────────────────────────────────────
-
-PRIORITY_MAP = {
-    "p1": 1, "critical": 1, "1": 1,
-    "p2": 2, "high": 2, "2": 2,
-    "p3": 3, "medium": 3, "3": 3,
-    "p4": 4, "low": 4, "4": 4,
-}
-IMPACT_MAP = {
-    "1": 1, "extensive": 1, "high": 1,
-    "2": 2, "significant": 2, "medium": 2,
-    "3": 3, "moderate": 3, "low": 3,
-    "4": 4, "minor": 4,
-}
 
 
 class RetrievalService:
@@ -42,8 +28,8 @@ class RetrievalService:
 
         # Paths
         PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-        self.index_path = PROJECT_ROOT / "vector_db" / "bm25_index.pkl"
-        self.csv_path = PROJECT_ROOT / "data" / "ITSM_data.csv"
+        self.index_path = PROJECT_ROOT / "vector_db" / "bm25_index_incident_response_v2.pkl"
+        self.csv_path = PROJECT_ROOT / "data" / "incident_response_dataset_150_rows.xlsx - Incident Data.csv"
 
         # Load BM25 Index
         with open(self.index_path, "rb") as f:
@@ -59,7 +45,7 @@ class RetrievalService:
 
         # Connect Milvus
         connections.connect(host="localhost", port="19530")
-        self.collection = Collection("incident_vectors")
+        self.collection = Collection("incident_response_vectors")
         self.collection.load()
 
     def _safe_str(self, value: Any) -> str:
@@ -68,40 +54,12 @@ class RetrievalService:
         text = str(value).strip()
         return "" if text.lower() == "nan" else text
 
-    def _safe_int(self, value: Any) -> Optional[int]:
-        text = self._safe_str(value)
-        if not text:
-            return None
-        try:
-            return int(float(text))
-        except Exception:
-            return None
-
-    def _status_is_resolved(self, status: str) -> bool:
-        s = (status or "").strip().lower()
-        return s in {"closed", "resolved", "complete"}
-
-    def _build_resolution_summary(
-        self,
-        status: str,
-        closure_code: str,
-        related_change: str,
-        resolved_time: str,
-        ci_cat: str,
-        ci_subcat: str,
-    ) -> str:
+    def _build_resolution_summary(self, description: str, solution: str) -> str:
         parts: List[str] = []
-        if closure_code:
-            parts.append(f"Closure code: {closure_code}")
-        if related_change:
-            parts.append(f"Related change: {related_change}")
-        if status:
-            parts.append(f"Status: {status}")
-        if resolved_time:
-            parts.append(f"Resolved at: {resolved_time}")
-        if ci_cat or ci_subcat:
-            scope = " / ".join([x for x in [ci_cat, ci_subcat] if x])
-            parts.append(f"Affected area: {scope}")
+        if description:
+            parts.append(f"Description: {description}")
+        if solution:
+            parts.append(f"Solution: {solution}")
 
         if not parts:
             return "No explicit resolution notes available in dataset for this incident."
@@ -109,32 +67,23 @@ class RetrievalService:
 
     def _to_lookup_record(
         self,
-        status: str,
-        closure_code: str,
-        related_change: str,
-        resolved_time: str,
-        ci_cat: str,
-        ci_subcat: str,
+        media_asset: str,
         category: str,
-        priority: Optional[int],
-        impact: Optional[int],
+        ticket_id: str,
+        incident_details: str,
+        description: str,
+        solution: str,
     ) -> Dict[str, str]:
         return {
-            "status": status,
-            "closure_code": closure_code,
-            "related_change": related_change,
-            "resolved_time": resolved_time,
+            "media_asset": media_asset,
             "category_raw": category,
-            "priority_raw": priority,
-            "impact_raw": impact,
-            "resolved_raw": self._status_is_resolved(status),
+            "ticket_id": ticket_id,
+            "incident_details": incident_details,
+            "description": description,
+            "solution": solution,
             "resolution_summary": self._build_resolution_summary(
-                status=status,
-                closure_code=closure_code,
-                related_change=related_change,
-                resolved_time=resolved_time,
-                ci_cat=ci_cat,
-                ci_subcat=ci_subcat,
+                description=description,
+                solution=solution,
             ),
         }
 
@@ -151,15 +100,12 @@ class RetrievalService:
                         """
                         SELECT
                             incident_id,
-                            status,
-                            closure_code,
-                            related_change,
-                            resolved_time,
-                            ci_cat,
-                            ci_subcat,
+                            media_asset,
                             category,
-                            priority,
-                            impact
+                            ticket_id,
+                            incident_details,
+                            description,
+                            solution
                         FROM incidents
                         """
                     )
@@ -169,15 +115,12 @@ class RetrievalService:
                             continue
 
                         lookup[incident_id] = self._to_lookup_record(
-                            status=self._safe_str(row[1]),
-                            closure_code=self._safe_str(row[2]),
-                            related_change=self._safe_str(row[3]),
-                            resolved_time=self._safe_str(row[4]),
-                            ci_cat=self._safe_str(row[5]),
-                            ci_subcat=self._safe_str(row[6]),
-                            category=self._safe_str(row[7]),
-                            priority=self._safe_int(row[8]),
-                            impact=self._safe_int(row[9]),
+                            media_asset=self._safe_str(row[1]),
+                            category=self._safe_str(row[2]),
+                            ticket_id=self._safe_str(row[3]),
+                            incident_details=self._safe_str(row[4]),
+                            description=self._safe_str(row[5]),
+                            solution=self._safe_str(row[6]),
                         )
             return lookup
         except Exception:
@@ -191,28 +134,24 @@ class RetrievalService:
             df = pd.read_csv(self.csv_path, low_memory=False)
             lookup: Dict[str, Dict[str, str]] = {}
             for _, row in df.iterrows():
-                incident_id = self._safe_str(row.get("Incident_ID"))
+                incident_id = self._safe_str(row.get("Incident ID"))
                 if not incident_id:
                     continue
 
-                status = self._safe_str(row.get("Status"))
-                closure_code = self._safe_str(row.get("Closure_Code"))
-                related_change = self._safe_str(row.get("Related_Change"))
-                resolved_time = self._safe_str(row.get("Resolved_Time"))
-                ci_cat = self._safe_str(row.get("CI_Cat"))
-                ci_subcat = self._safe_str(row.get("CI_Subcat"))
                 category = self._safe_str(row.get("Category"))
+                media_asset = self._safe_str(row.get("Media Asset"))
+                ticket_id = self._safe_str(row.get("Ticket ID"))
+                incident_details = self._safe_str(row.get("Incident Details"))
+                description = self._safe_str(row.get("Description"))
+                solution = self._safe_str(row.get("Solution"))
 
                 lookup[incident_id] = self._to_lookup_record(
-                    status=status,
-                    closure_code=closure_code,
-                    related_change=related_change,
-                    resolved_time=resolved_time,
-                    ci_cat=ci_cat,
-                    ci_subcat=ci_subcat,
+                    media_asset=media_asset,
                     category=category,
-                    priority=self._safe_int(row.get("Priority")),
-                    impact=self._safe_int(row.get("Impact")),
+                    ticket_id=ticket_id,
+                    incident_details=incident_details,
+                    description=description,
+                    solution=solution,
                 )
             return lookup
         except Exception:
@@ -232,41 +171,15 @@ class RetrievalService:
         )
         return response.data[0].embedding
 
-    def _to_int_filter(self, label_map: dict, value: Optional[str]) -> Optional[int]:
-        if not value:
-            return None
-        return label_map.get(value.lower().strip())
-
-    def _to_int_filters(self, label_map: dict, value: Optional[str]) -> List[int]:
-        if not value:
-            return []
-        normalized = (
-            value.lower()
-            .replace(" or ", ",")
-            .replace("/", ",")
-            .replace("|", ",")
-            .replace(";", ",")
-        )
-        parts = [p.strip() for p in normalized.split(",") if p.strip()]
-        values: List[int] = []
-        for p in parts:
-            v = label_map.get(p)
-            if v is not None and v not in values:
-                values.append(v)
-        return values
-
     def _effective_meta(self, inc_id: str, meta: Dict[str, Any]) -> Dict[str, Any]:
         lookup = self.incident_lookup.get(inc_id, {})
         return {
-            "priority": meta.get("priority") if meta.get("priority") is not None else lookup.get("priority_raw"),
-            "impact": meta.get("impact") if meta.get("impact") is not None else lookup.get("impact_raw"),
             "category": meta.get("category") or lookup.get("category_raw"),
-            "resolved": meta.get("resolved") if meta.get("resolved") is not None else lookup.get("resolved_raw"),
-            "incident_date": meta.get("incident_date"),
-            "status": lookup.get("status"),
-            "closure_code": lookup.get("closure_code"),
-            "related_change": lookup.get("related_change"),
-            "resolved_time": lookup.get("resolved_time"),
+            "media_asset": meta.get("media_asset") or lookup.get("media_asset"),
+            "ticket_id": meta.get("ticket_id") or lookup.get("ticket_id"),
+            "incident_details": meta.get("incident_details") or lookup.get("incident_details"),
+            "description": meta.get("description") or lookup.get("description"),
+            "solution": meta.get("solution") or lookup.get("solution"),
             "resolution_summary": lookup.get(
                 "resolution_summary",
                 "No explicit resolution notes available in dataset for this incident.",
@@ -280,10 +193,8 @@ class RetrievalService:
         impact_filters: List[int],
         category_filter: Optional[str],
     ) -> bool:
-        if priority_filters and effective_meta.get("priority") not in priority_filters:
-            return False
-        if impact_filters and effective_meta.get("impact") not in impact_filters:
-            return False
+        # Priority and impact are not present in the current dataset schema.
+        # Ignore those filters rather than forcing synthetic metadata.
         if category_filter:
             category_value = (effective_meta.get("category") or "").strip().lower()
             if category_value != category_filter:
@@ -312,19 +223,8 @@ class RetrievalService:
         """
         # ── 1. Build Milvus filter expression ─────────────────────────────────
         filter_parts = []
-        priority_filters = self._to_int_filters(PRIORITY_MAP, priority)
-        if len(priority_filters) == 1:
-            filter_parts.append(f'priority == {priority_filters[0]}')
-        elif len(priority_filters) > 1:
-            ints = ", ".join(str(v) for v in priority_filters)
-            filter_parts.append(f"priority in [{ints}]")
-        
-        impact_filters = self._to_int_filters(IMPACT_MAP, impact)
-        if len(impact_filters) == 1:
-            filter_parts.append(f'impact == {impact_filters[0]}')
-        elif len(impact_filters) > 1:
-            ints = ", ".join(str(v) for v in impact_filters)
-            filter_parts.append(f"impact in [{ints}]")
+        priority_filters: List[int] = []
+        impact_filters: List[int] = []
 
         category_filter = category.strip().lower() if category else None
         if category_filter:
@@ -340,7 +240,15 @@ class RetrievalService:
             anns_field="embedding",
             param=search_params,
             limit=top_k * 3,
-            output_fields=["incident_id", "priority", "impact", "category", "resolved", "incident_date"],
+            output_fields=[
+                "incident_id",
+                "media_asset",
+                "category",
+                "ticket_id",
+                "incident_details",
+                "description",
+                "solution",
+            ],
         )
         if milvus_expr:
             search_kwargs["expr"] = milvus_expr
@@ -364,11 +272,12 @@ class RetrievalService:
                 inc_id = hit.entity.get("incident_id")
                 sem_score = float(hit.distance)
                 meta = {
-                    "priority": hit.entity.get("priority"),
-                    "impact": hit.entity.get("impact"),
+                    "media_asset": hit.entity.get("media_asset"),
                     "category": hit.entity.get("category"),
-                    "resolved": hit.entity.get("resolved"),
-                    "incident_date": hit.entity.get("incident_date"),
+                    "ticket_id": hit.entity.get("ticket_id"),
+                    "incident_details": hit.entity.get("incident_details"),
+                    "description": hit.entity.get("description"),
+                    "solution": hit.entity.get("solution"),
                 }
                 if inc_id in combined:
                     combined[inc_id]["score"] += sem_score * semantic_weight
@@ -377,29 +286,8 @@ class RetrievalService:
                     combined[inc_id] = {"score": sem_score * semantic_weight, "meta": meta}
 
         # ── 5. Reranking ───────────────────────────────────────────────────────
-        now = datetime.now(timezone.utc)
-        for inc_id, entry in combined.items():
-            meta = entry["meta"]
-            if not meta: continue
-
-            # Recency boost
-            recency_boost = 0.0
-            date_str = meta.get("incident_date")
-            if date_str:
-                try:
-                    # CSV dates are often MM/DD/YYYY or similar. Milvus has them as strings.
-                    # We'll try a flexible parse or fallback.
-                    dt = datetime.fromisoformat(date_str) if "T" in date_str else datetime.strptime(date_str, "%m/%d/%Y %H:%M")
-                    if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
-                    age_days = (now - dt).days
-                    recency_boost = max(0.0, 1.0 - (age_days / 730)) # Decays over 2 years
-                except:
-                    pass
-
-            # Resolution boost
-            resolution_boost = 1.0 if meta.get("resolved") else 0.0
-
-            entry["score"] += (recency_boost * recency_weight) + (resolution_boost * resolution_weight)
+        # No recency/resolution metadata exists in the current dataset schema.
+        # Keep score as hybrid(BM25 + semantic) without synthetic boosts.
 
         # ── 6. Sort and return top_k ───────────────────────────────────────────
         sorted_results = sorted(combined.items(), key=lambda x: x[1]["score"], reverse=True)[:top_k]
@@ -414,14 +302,15 @@ class RetrievalService:
                 {
                     "incident_id": inc_id,
                     "score": round(entry["score"], 4),
-                    "priority": effective_meta.get("priority"),
+                    "priority": None,
                     "category": effective_meta.get("category"),
-                    "impact": effective_meta.get("impact"),
-                    "resolved": effective_meta.get("resolved"),
-                    "status": effective_meta.get("status"),
-                    "closure_code": effective_meta.get("closure_code"),
-                    "related_change": effective_meta.get("related_change"),
-                    "resolved_time": effective_meta.get("resolved_time"),
+                    "impact": None,
+                    "resolved": None,
+                    "media_asset": effective_meta.get("media_asset"),
+                    "ticket_id": effective_meta.get("ticket_id"),
+                    "incident_details": effective_meta.get("incident_details"),
+                    "description": effective_meta.get("description"),
+                    "solution": effective_meta.get("solution"),
                     "resolution_summary": effective_meta.get("resolution_summary"),
                 }
             )

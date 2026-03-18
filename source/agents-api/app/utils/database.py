@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
+from urllib.parse import quote_plus
 
 load_dotenv()
 
@@ -25,9 +26,21 @@ DB_CONN = os.getenv("DB_CONNECTION_STRING")
 def get_db_url():
     conn_str = os.getenv("DB_CONNECTION_STRING", "")
     if "host=" in conn_str:
-        # Simple parse for the specific format provided by user
-        parts = dict(x.split('=') for x in conn_str.split())
-        return f"postgresql://{parts['user']}:{parts['password']}@{parts['host']}:{parts.get('port', 5432)}/{parts['dbname']}"
+        parts = {}
+        for token in conn_str.split():
+            if "=" not in token:
+                continue
+            key, value = token.split("=", 1)
+            if key:
+                parts[key.strip()] = value.strip()
+
+        dbname = (parts.get("dbname", "")).lstrip("=")
+        user = parts.get("user", "")
+        password = quote_plus(parts.get("password", ""))
+        host = parts.get("host", "localhost")
+        port = parts.get("port", 5432)
+
+        return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
     return conn_str
 
 DATABASE_URL = get_db_url()

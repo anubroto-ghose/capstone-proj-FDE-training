@@ -12,11 +12,7 @@ load_dotenv()
 # DATABASE CONNECTION
 # ==============================
 
-DB_CONNECTION = os.getenv(
-    "DB_CONNECTION_STRING",
-    "host=localhost port=5432 dbname=IncidentResolutionDB user=postgres password=root connect_timeout=10 sslmode=prefer",
-)
-DB_CONNECTION = DB_CONNECTION.replace("dbname==", "dbname=")
+DB_CONNECTION = os.getenv("DB_CONNECTION_STRING", "DB_CONNECTION_STRING")
 
 # ==============================
 # PATHS
@@ -24,7 +20,7 @@ DB_CONNECTION = DB_CONNECTION.replace("dbname==", "dbname=")
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
-CSV_PATH = PROJECT_ROOT / "data" / "incident_response_dataset_150_rows.xlsx - Incident Data.csv"
+CSV_PATH = PROJECT_ROOT / "data" / "ITSM_data.csv"
 
 
 # ==============================
@@ -209,24 +205,35 @@ conn.commit()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS incidents (
-    incident_id TEXT PRIMARY KEY,
-    ticket_id TEXT,
-    media_asset TEXT,
-    category TEXT,
-    incident_details TEXT,
-    description TEXT,
-    solution TEXT
+    CI_Name TEXT,
+    CI_Cat TEXT,
+    CI_Subcat TEXT,
+    WBS TEXT,
+    Incident_ID TEXT PRIMARY KEY,
+    Status TEXT,
+    Impact TEXT,
+    Urgency TEXT,
+    Priority TEXT,
+    number_cnt FLOAT,
+    Category TEXT,
+    KB_number TEXT,
+    Alert_Status TEXT,
+    No_of_Reassignments INTEGER,
+    Open_Time TEXT,
+    Reopen_Time TEXT,
+    Resolved_Time TEXT,
+    Close_Time TEXT,
+    Handle_Time_hrs TEXT,
+    Closure_Code TEXT,
+    No_of_Related_Interactions INTEGER,
+    Related_Interaction TEXT,
+    No_of_Related_Incidents INTEGER,
+    No_of_Related_Changes INTEGER,
+    Related_Change TEXT
 );
 """)
 
 print("Incidents table ready")
-
-cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS ticket_id TEXT;")
-cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS media_asset TEXT;")
-cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS incident_details TEXT;")
-cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS description TEXT;")
-cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS solution TEXT;")
-print("Incidents table migration check complete")
 
 
 
@@ -282,15 +289,6 @@ def clean_text(value):
     return str(value)
 
 
-def pick(row, *keys, default=None):
-    for key in keys:
-        if key in row:
-            value = row[key]
-            if pd.notna(value) and str(value).strip() != "":
-                return value
-    return default
-
-
 # ==============================
 # LOAD DATASET
 # ==============================
@@ -307,16 +305,12 @@ print(f"Loaded {len(df)} rows")
 # ==============================
 
 insert_query = """
-INSERT INTO incidents (
-    incident_id,
-    ticket_id,
-    media_asset,
-    category,
-    incident_details,
-    description,
-    solution
-) VALUES (%s,%s,%s,%s,%s,%s,%s)
-ON CONFLICT (incident_id) DO NOTHING
+INSERT INTO incidents VALUES (
+%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+%s,%s,%s,%s,%s
+)
+ON CONFLICT (Incident_ID) DO NOTHING
 """
 
 print("Inserting incidents into PostgreSQL...")
@@ -324,13 +318,31 @@ print("Inserting incidents into PostgreSQL...")
 for _, row in tqdm(df.iterrows(), total=len(df)):
 
     data = (
-        clean_text(pick(row, "Incident ID")),
-        clean_text(pick(row, "Ticket ID")),
-        clean_text(pick(row, "Media Asset")),
-        clean_text(pick(row, "Category")),
-        clean_text(pick(row, "Incident Details")),
-        clean_text(pick(row, "Description")),
-        clean_text(pick(row, "Solution")),
+        clean_text(row["CI_Name"]),
+        clean_text(row["CI_Cat"]),
+        clean_text(row["CI_Subcat"]),
+        clean_text(row["WBS"]),
+        clean_text(row["Incident_ID"]),
+        clean_text(row["Status"]),
+        clean_integer(row["Impact"]),
+        clean_integer(row["Urgency"]),
+        clean_integer(row["Priority"]),
+        clean_float(row["number_cnt"]),
+        clean_text(row["Category"]),
+        clean_text(row["KB_number"]),
+        clean_text(row["Alert_Status"]),
+        clean_integer(row["No_of_Reassignments"]),
+        clean_text(row["Open_Time"]),
+        clean_text(row["Reopen_Time"]),
+        clean_text(row["Resolved_Time"]),
+        clean_text(row["Close_Time"]),
+        clean_text(row["Handle_Time_hrs"]),
+        clean_text(row["Closure_Code"]),
+        clean_integer(row["No_of_Related_Interactions"]),
+        clean_text(row["Related_Interaction"]),
+        clean_integer(row["No_of_Related_Incidents"]),
+        clean_integer(row["No_of_Related_Changes"]),
+        clean_text(row["Related_Change"]),
     )
 
     cursor.execute(insert_query, data)
