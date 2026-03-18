@@ -1,0 +1,96 @@
+flowchart LR
+    U[Support Engineer / End User]
+    FE[Frontend<br/>Vite + React]
+
+    subgraph AUTH_MS[Auth Microservice]
+        AUTH[Auth API<br/>FastAPI]
+        AUTH_R[auth_routes.py]
+        AUTH_S[auth_service.py]
+        AUTH_J[jwt_service.py]
+        AUTH_DB[db_service.py]
+    end
+
+    subgraph DASH_MS[Dashboard Microservice]
+        DASH[Dashboard API<br/>FastAPI]
+        DASH_R[dashboard_routes.py]
+        DASH_A[auth util]
+        DASH_DB[database.py]
+        DASH_M[models + schemas]
+    end
+
+    subgraph AGENTS_MS[Agents Microservice]
+        AGENTS[Agents API<br/>FastAPI]
+        CHAT[chat_routes.py]
+        SESSION[agent_session.py]
+        RET[retrieval_service.py]
+    end
+
+    subgraph AG[Agent Orchestration]
+        L1[L1 Support Specialist<br/>LLM: gpt-4o-mini]
+        L2[L2 Technical Specialist<br/>LLM: gpt-4o-mini]
+        L3[RCA Specialist<br/>LLM: gpt-4o-mini]
+        TOOLS[Agent Tools<br/>Hybrid Search, Filtered Search,<br/>Judge, Metrics, A2A]
+        JUDGE[LLM-as-Judge<br/>gpt-4o-mini]
+        METRICS[Resolution Time + Fix Accuracy<br/>gpt-4o-mini]
+        COMP[Prompt Compression<br/>LLMLingua-2:<br/>microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank]
+        GR[Guardrails<br/>Microsoft Presidio<br/>Analyzer + Anonymizer]
+    end
+
+    subgraph DATA[Data and Infrastructure]
+        PG[(PostgreSQL<br/>users, sessions, messages,<br/>turn_usage, incident_feedback, incidents)]
+        MV[(Milvus<br/>incident_vectors)]
+        BM25[(BM25 Index<br/>vector_db/bm25_index.pkl)]
+        CSV[(ITSM_data.csv)]
+        EMB[Embedding Model<br/>text-embedding-3-small]
+    end
+
+    subgraph OBS[Observability and Evaluation]
+        LS[LangSmith Tracing]
+        DE[DeepEval Test Suite]
+    end
+
+    U --> FE
+    FE --> AUTH
+    FE --> DASH
+    FE --> AGENTS
+
+    AUTH --> AUTH_R --> AUTH_S --> AUTH_DB --> PG
+    AUTH_R --> AUTH_J
+
+    DASH --> DASH_R --> DASH_A
+    DASH_R --> DASH_DB --> PG
+    DASH_R --> DASH_M
+
+    AGENTS --> CHAT
+    CHAT --> SESSION --> PG
+    CHAT --> RET
+    AUTH --> PG
+    DASH --> PG
+    AGENTS --> PG
+
+    AGENTS --> L1
+    L1 --> L2
+    L2 --> L3
+    L1 --> TOOLS
+    L2 --> TOOLS
+    L3 --> TOOLS
+    TOOLS --> JUDGE
+    TOOLS --> METRICS
+    AGENTS --> COMP
+    AGENTS --> GR
+
+    TOOLS --> MV
+    TOOLS --> BM25
+    TOOLS --> PG
+    TOOLS --> EMB
+
+    CSV --> BM25
+    CSV --> MV
+    CSV --> PG
+
+    CHAT --> GR
+    CHAT --> COMP
+    AGENTS --> LS
+    TOOLS --> LS
+    RET --> LS
+    DE --> AGENTS

@@ -1,0 +1,23 @@
+flowchart LR
+    FE[Frontend]
+    AUTH[Auth API<br/>FastAPI]
+
+    subgraph AUTH_LAYER[Auth Components]
+        ROUTES[auth_routes.py<br/>register, login, me, update me]
+        SERVICE[auth_service.py]
+        JWT[jwt_service.py]
+        DB_SVC[db_service.py]
+        SCHEMA[auth_schema.py]
+    end
+
+    PG[(PostgreSQL<br/>users)]
+
+    FE -->|Register/Login/Profile| AUTH
+    AUTH --> ROUTES
+    ROUTES --> SCHEMA
+    ROUTES --> SERVICE
+    ROUTES --> JWT
+    SERVICE --> DB_SVC
+    DB_SVC --> PG
+    JWT --> ROUTES
+
