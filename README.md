@@ -79,7 +79,7 @@ Windows (PowerShell):
 cd source\auth
 uvicorn app.main:app --port 8001
 ```
-POSIX:
+POSIX (Linux/macOS/Unix):
 ```bash
 cd source/auth
 uvicorn app.main:app --port 8001
@@ -91,7 +91,7 @@ Windows (PowerShell):
 cd source\dashboard-api
 uvicorn app.main:app --port 8002
 ```
-POSIX:
+POSIX (Linux/macOS/Unix):
 ```bash
 cd source/dashboard-api
 uvicorn app.main:app --port 8002
@@ -103,7 +103,7 @@ Windows (PowerShell):
 cd source\agents-api
 uvicorn app.main:app --port 8003
 ```
-POSIX:
+POSIX (Linux/macOS/Unix):
 ```bash
 cd source/agents-api
 uvicorn app.main:app --port 8003
@@ -116,7 +116,7 @@ cd source\frontend
 npm install
 npm run dev
 ```
-POSIX:
+POSIX (Linux/macOS/Unix):
 ```bash
 cd source/frontend
 npm install
@@ -130,7 +130,7 @@ Windows (PowerShell):
 cd source\auth
 pytest tests -q
 ```
-POSIX:
+POSIX (Linux/macOS/Unix):
 ```bash
 cd source/auth
 pytest tests -q
@@ -142,7 +142,7 @@ Windows (PowerShell):
 cd source\dashboard-api
 pytest tests -q
 ```
-POSIX:
+POSIX (Linux/macOS/Unix):
 ```bash
 cd source/dashboard-api
 pytest tests -q
@@ -154,7 +154,7 @@ Windows (PowerShell):
 cd source\agents-api
 pytest tests -q
 ```
-POSIX:
+POSIX (Linux/macOS/Unix):
 ```bash
 cd source/agents-api
 pytest tests -q
@@ -172,7 +172,7 @@ Windows (PowerShell):
 cd source\agents-api
 pytest tests/test_eval.py -q
 ```
-POSIX:
+POSIX (Linux/macOS/Unix):
 ```bash
 cd source/agents-api
 pytest tests/test_eval.py -q
