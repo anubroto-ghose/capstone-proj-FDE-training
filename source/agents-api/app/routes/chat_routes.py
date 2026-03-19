@@ -6,6 +6,7 @@ from ..utils.guardrails import guardrails
 from ..utils.fallback_llm import generate_max_turns_fallback
 from ..utils.chat_helpers import generate_default_session_name, build_static_max_turns_fallback
 from ..utils.logger import logger
+from ..utils.runtime_context import set_current_session_id, reset_current_session_id
 from ..schemas.chat_models import ChatRequest, ChatResponse
 from ..utils.database import AsyncSessionLocal
 from ..models.models import AgentMessage
@@ -77,24 +78,28 @@ async def chat_with_agent(request: ChatRequest, current_user: dict = Depends(get
             logger.info(f"Explicit escalation detected | session={actual_session_id} | switched_to=RCA")
 
         # ── Run the agent ──
+        session_token = set_current_session_id(actual_session_id)
         try:
-            result = await run_agent_with_tracing(sanitized_input, session, actual_session_id, starting_agent)
-        except MaxTurnsExceeded:
-            logger.warning(f"Max turns exceeded | session={actual_session_id}")
             try:
-                fallback_text = await generate_max_turns_fallback(request.message)
-            except Exception as fallback_err:
-                logger.warning(f"Fallback LLM failed, using static fallback | error={fallback_err}")
-                fallback_text = build_static_max_turns_fallback(request.message)
-            sanitized_fallback = guardrails.mask_pii(fallback_text)
-            fallback_msg_id = await store_assistant_message(actual_session_id, sanitized_fallback)
-            return ChatResponse(
-                response=sanitized_fallback,
-                session_id=actual_session_id,
-                message_id=fallback_msg_id,
-                category="General",
-                agent_tier="L1"
-            )
+                result = await run_agent_with_tracing(sanitized_input, session, actual_session_id, starting_agent)
+            except MaxTurnsExceeded:
+                logger.warning(f"Max turns exceeded | session={actual_session_id}")
+                try:
+                    fallback_text = await generate_max_turns_fallback(request.message)
+                except Exception as fallback_err:
+                    logger.warning(f"Fallback LLM failed, using static fallback | error={fallback_err}")
+                    fallback_text = build_static_max_turns_fallback(request.message)
+                sanitized_fallback = guardrails.mask_pii(fallback_text)
+                fallback_msg_id = await store_assistant_message(actual_session_id, sanitized_fallback)
+                return ChatResponse(
+                    response=sanitized_fallback,
+                    session_id=actual_session_id,
+                    message_id=fallback_msg_id,
+                    category="General",
+                    agent_tier="L1"
+                )
+        finally:
+            reset_current_session_id(session_token)
 
         agent_output = result.final_output
         

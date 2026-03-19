@@ -21,44 +21,38 @@ class DummyCollection:
 
 
 @pytest.mark.asyncio
-async def test_hybrid_search_uses_bm25_when_semantic_empty_and_filters_apply():
+async def test_hybrid_search_uses_bm25_when_semantic_empty_and_category_filter_applies():
     service = RetrievalService.__new__(RetrievalService)
     service.bm25 = DummyBM25([1.0, 0.8, 0.3])
     service.incident_ids = ["IM0001", "IM0002", "IM0003"]
     service.collection = DummyCollection()
     service.incident_lookup = {
         "IM0001": {
-            "priority_raw": 1,
-            "impact_raw": 1,
             "category_raw": "Application",
-            "resolved_raw": True,
-            "status": "Closed",
-            "closure_code": "Solved",
-            "related_change": "",
-            "resolved_time": "2026-01-01 10:00",
-            "resolution_summary": "Closed with application tuning.",
+            "media_asset": "MediaServer01",
+            "ticket_id": "TKT-1001",
+            "incident_details": "Disk Space Alert",
+            "description": "Storage exceeded threshold causing upload failures",
+            "solution": "Archive old media files and expand storage volume",
+            "resolution_summary": "Description: Storage exceeded threshold causing upload failures; Solution: Archive old media files and expand storage volume",
         },
         "IM0002": {
-            "priority_raw": 2,
-            "impact_raw": 2,
             "category_raw": "Application",
-            "resolved_raw": True,
-            "status": "Closed",
-            "closure_code": "Solved",
-            "related_change": "",
-            "resolved_time": "2026-01-02 10:00",
-            "resolution_summary": "Closed after DB config change.",
+            "media_asset": "MediaServer02",
+            "ticket_id": "TKT-1002",
+            "incident_details": "Slow Delivery",
+            "description": "Media loading slowly due to cache miss",
+            "solution": "Refresh CDN cache and optimize media compression",
+            "resolution_summary": "Description: Media loading slowly due to cache miss; Solution: Refresh CDN cache and optimize media compression",
         },
         "IM0003": {
-            "priority_raw": 4,
-            "impact_raw": 3,
             "category_raw": "Network",
-            "resolved_raw": False,
-            "status": "Open",
-            "closure_code": "",
-            "related_change": "",
-            "resolved_time": "",
-            "resolution_summary": "No resolution yet.",
+            "media_asset": "MediaServer07",
+            "ticket_id": "TKT-1007",
+            "incident_details": "Streaming Failure",
+            "description": "Video stream stopped responding for live broadcast",
+            "solution": "Restart streaming service and reset network interface",
+            "resolution_summary": "Description: Video stream stopped responding for live broadcast; Solution: Restart streaming service and reset network interface",
         },
     }
 
@@ -69,21 +63,32 @@ async def test_hybrid_search_uses_bm25_when_semantic_empty_and_filters_apply():
 
     results = await service.hybrid_search(
         query="system slowdown intermittent timeout",
-        priority="P1,P2",
-        impact="high",
+        category="Application",
         top_k=5,
     )
 
-    # Filter should keep IM0001 (priority=1, impact=1), and exclude others.
-    assert len(results) == 1
-    assert results[0]["incident_id"] == "IM0001"
+    # Category filter should keep only Application incidents and exclude Network.
+    assert len(results) == 2
+    assert {r["incident_id"] for r in results} == {"IM0001", "IM0002"}
     assert "resolution_summary" in results[0]
-    # Multi-value filter expression should be generated for Milvus.
-    assert "priority in [1, 2]" in service.collection.last_search_kwargs.get("expr", "")
+    # Category filter expression should be generated for Milvus.
+    assert 'category == "Application"' in service.collection.last_search_kwargs.get("expr", "")
 
 
-def test_priority_filter_parsing_supports_or_and_commas():
+def test_search_output_includes_textual_resolution_fields():
     service = RetrievalService.__new__(RetrievalService)
-    values = service._to_int_filters({"p1": 1, "p2": 2, "critical": 1}, "P1 or P2, critical")
-    assert values == [1, 2]
-
+    service.incident_lookup = {}
+    effective_meta = service._effective_meta(
+        "INC-5001",
+        {
+            "media_asset": "MediaServer01",
+            "category": "Storage",
+            "ticket_id": "TKT-1001",
+            "incident_details": "Disk Space Alert",
+            "description": "Storage exceeded threshold causing upload failures",
+            "solution": "Archive old media files and expand storage volume",
+        },
+    )
+    assert effective_meta["incident_details"] == "Disk Space Alert"
+    assert effective_meta["description"] == "Storage exceeded threshold causing upload failures"
+    assert effective_meta["solution"] == "Archive old media files and expand storage volume"

@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 import json
 from sqlalchemy import select, delete, distinct
 from ..utils.database import AsyncSessionLocal
-from ..models.models import A2AContext
+from ..models.models import A2AContext, AgentSession
 
 class A2AContextStore:
     """
@@ -47,6 +47,13 @@ class A2AContextStore:
             content: The payload to share (string, dict, or list).
         """
         async with AsyncSessionLocal() as db:
+            existing = await db.scalar(
+                select(AgentSession.session_id).where(AgentSession.session_id == session_id)
+            )
+            if existing is None:
+                db.add(AgentSession(session_id=session_id))
+                await db.flush()
+
             row = A2AContext(
                 session_id=session_id,
                 from_agent=from_agent,

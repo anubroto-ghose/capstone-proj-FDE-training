@@ -2,22 +2,36 @@ from agents import function_tool
 from langsmith import traceable
 from ..services.a2a_context import a2a_store
 from ..utils.logger import logger
+from ..utils.runtime_context import get_current_session_id
+
+
+def _resolve_session_id(tool_session_id: str) -> str:
+    canonical = get_current_session_id()
+    if canonical:
+        if tool_session_id and tool_session_id != canonical:
+            logger.warning(
+                f"A2A session_id mismatch | tool={tool_session_id} canonical={canonical} | using canonical"
+            )
+        return canonical
+    return tool_session_id
 
 @traceable(run_type="tool", name="share_handoff_context", project_name="IT-Incident-Assistant")
 async def _share_context_impl(session_id: str, to_agent: str, context_type: str, content: str) -> str:
+    resolved_session_id = _resolve_session_id(session_id)
     await a2a_store.post_context(
-        session_id=session_id,
+        session_id=resolved_session_id,
         from_agent="Current Agent",
         to_agent=to_agent,
         context_type=context_type,
         content=content
     )
-    logger.info(f"A2A context shared: {context_type} for {to_agent} in session {session_id}")
+    logger.info(f"A2A context shared: {context_type} for {to_agent} in session {resolved_session_id}")
     return "Context shared successfully."
 
 @traceable(run_type="tool", name="get_shared_context", project_name="IT-Incident-Assistant")
 async def _get_context_impl(session_id: str, agent_name: str) -> list:
-    return await a2a_store.get_context(session_id=session_id, to_agent=agent_name)
+    resolved_session_id = _resolve_session_id(session_id)
+    return await a2a_store.get_context(session_id=resolved_session_id, to_agent=agent_name)
 
 @function_tool
 async def share_handoff_context(session_id: str, to_agent: str, context_type: str, content: str) -> str:
