@@ -1,115 +1,189 @@
 # AI-Powered Incident Knowledge Base Assistant
 
-A semantic retrieval and multi-agent system designed to streamline IT support by leveraging historical incident data. This system uses a multi-tier agent architecture (L1, L2, RCA) to triage, investigate, and resolve technical issues with high accuracy and speed.
+Semantic retrieval + multi-agent troubleshooting platform for IT incidents.
 
-## 🚀 Key Features
+## What This Project Does
+- Retrieves similar incidents from historical data using hybrid search (BM25 + Milvus).
+- Uses a multi-tier agent workflow (L1 -> L2 -> RCA) for escalation.
+- Validates suggested fixes with LLM-as-judge.
+- Persists sessions, messages, feedback, and A2A handoff context in PostgreSQL.
 
-### 🔹 Requirement 1 (Basic)
-- **Hybrid RAG**: Combined semantic search (Milvus) and keyword search (BM25) for precise incident retrieval.
-- **Triage Agent**: Automated priority (P1-P4) and category classification.
-- **Metadata Filtering**: Advanced filtering by priority, impact, and category.
-- **Guardrails**: Input/Output PII masking using Microsoft Presidio.
-- **Microservices Architecture**: Separate Auth, Dashboard, and Agents APIs.
+## Repository Layout
+All runnable code is under `source/`.
 
-### 🔹 Requirement 2 (Advanced)
-- **Multi-Tier Agent System**: Seamless handoff between L1 Generalist, L2 Technical Specialist, and RCA Specialist.
-- **Predictive Metrics**: Automated resolution time prediction and fix accuracy scoring.
-- **Agent Collaboration (A2A)**: Structured knowledge sharing between agents via dedicated context tools.
-- **Continuous Improvement**: Feedback loop for users to rate resolutions (thumbs up/down).
-- **Token Optimization**: History compression for long-running troubleshooting sessions.
-- **DeepEval Integration**: Quality assurance for RAG responses using relevancy and faithfulness metrics.
+- `source/auth` -> Auth microservice
+- `source/dashboard-api` -> Session/history/dashboard microservice
+- `source/agents-api` -> Retrieval + agent orchestration microservice
+- `source/frontend` -> Vite + React frontend
+- `source/setup` -> One-time setup/ingestion scripts
+- `source/data` -> Dataset files
+- `source/vector_db` -> BM25 index artifact(s)
+- `docs` -> architecture/design/presentation docs
 
-## 🛠️ Project Setup
+## Dataset (Current)
+- File: `source/data/incident_response_dataset_150_rows.xlsx - Incident Data.csv`
+- Schema:
+  - `Media Asset`
+  - `Category`
+  - `Ticket ID`
+  - `Incident ID`
+  - `Incident Details`
+  - `Description`
+  - `Solution`
 
-### 1. Prerequisites
-- Python 3.9+
+## Prerequisites
+- Python 3.10+
+- Node.js 18+
 - PostgreSQL
-- Milvus (Standalone)
-- Node.js & npm (for Frontend)
+- Milvus standalone (running on localhost:19530)
+- OpenAI API key
 
-### 2. Backend Setup
-Each microservice has its own `.env` file. Ensure they are configured correctly.
+## Environment Variables
+Set per service `.env` files (or global env), especially:
 
+- `OPENAI_API_KEY=<your_key>`
+- `DB_CONNECTION_STRING=host=localhost port=5432 dbname=IncidentResolutionDB user=postgres password=root connect_timeout=10 sslmode=prefer`
+
+## Setup Order (Run Once / Re-run on Data Refresh)
+From project root:
+
+Windows (PowerShell):
+```powershell
+cd source\setup
+python postgres_check.py
+python postgres_sql_setup.py
+python build_bm25_index.py
+python csv_to_vector_db.py
+```
+
+POSIX (Linux/macOS/Unix):
 ```bash
-# Start Auth API (Port 8001)
-cd auth
+cd source/setup
+python postgres_check.py
+python postgres_sql_setup.py
+python build_bm25_index.py
+python csv_to_vector_db.py
+```
+
+This creates/updates:
+- PostgreSQL tables + incident data
+- BM25 artifact: `source/vector_db/bm25_index_incident_response_v2.pkl`
+- Milvus collection: `incident_response_vectors`
+
+## Run Services
+Open separate terminals from project root.
+
+Auth API:
+Windows (PowerShell):
+```powershell
+cd source\auth
 uvicorn app.main:app --port 8001
+```
+POSIX:
+```bash
+cd source/auth
+uvicorn app.main:app --port 8001
+```
 
-# Start Dashboard API (Port 8002)
-cd dashboard-api
+Dashboard API:
+Windows (PowerShell):
+```powershell
+cd source\dashboard-api
 uvicorn app.main:app --port 8002
+```
+POSIX:
+```bash
+cd source/dashboard-api
+uvicorn app.main:app --port 8002
+```
 
-# Start Agents API (Port 8003)
-cd agents-api
+Agents API:
+Windows (PowerShell):
+```powershell
+cd source\agents-api
+uvicorn app.main:app --port 8003
+```
+POSIX:
+```bash
+cd source/agents-api
 uvicorn app.main:app --port 8003
 ```
 
-### 3. Frontend Setup
+Frontend:
+Windows (PowerShell):
+```powershell
+cd source\frontend
+npm install
+npm run dev
+```
+POSIX:
 ```bash
-cd frontend
+cd source/frontend
 npm install
 npm run dev
 ```
 
-## 📊 Sample Usage
-
-1. **Login**: Register/Login via the frontend.
-2. **Query**: Enter a natural language query like: *"Our application runs fine after a restart but after some time it starts slowing down. What might be causing this?"*
-3. **Response**: 
-   - An L1 agent will triage the issue.
-   - If complex, it hands off to L2 or the RCA Specialist.
-   - The system retrieves similar incidents from Milvus/BM25.
-   - A resolution is presented with **Predicted Resolution Time** and **Fix Accuracy Score**.
-4. **Feedback**: Rate the response to improve the knowledge base.
-
-## 🏗️ Architecture
-
-The system follows a modular microservice architecture. See `architecture_and_design.md` for a detailed Mermaid diagram and technical decisions.
-
-## 🧪 Evaluation
-Run DeepEval tests to verify RAG quality:
+## Testing
+Auth:
+Windows (PowerShell):
+```powershell
+cd source\auth
+pytest tests -q
+```
+POSIX:
 ```bash
-cd agents-api
-pytest tests/test_eval.py
+cd source/auth
+pytest tests -q
 ```
 
-## ✅ Test Suite (Read-Only)
-The automated tests below focus on **data retrieval / matching behavior** and avoid insert/delete test cases.
-
-### Auth Microservice
+Dashboard:
+Windows (PowerShell):
+```powershell
+cd source\dashboard-api
+pytest tests -q
+```
+POSIX:
 ```bash
-cd auth
-pip install -r requirements.txt pytest
-pytest tests/test_auth_read_only.py -q
+cd source/dashboard-api
+pytest tests -q
 ```
 
-### Dashboard API
+Agents:
+Windows (PowerShell):
+```powershell
+cd source\agents-api
+pytest tests -q
+```
+POSIX:
 ```bash
-cd dashboard-api
-pip install -r requirements.txt pytest pytest-asyncio
-pytest tests/test_dashboard_read_only.py -q
+cd source/agents-api
+pytest tests -q
 ```
 
-### Agents API (Retrieval + DeepEval)
+DeepEval (optional online eval):
+- Use `source/agents-api/.env.tests`
+- Include:
+  - `RUN_DEEPEVAL=1`
+  - `OPENAI_API_KEY=<your_key>`
+
+Then:
+Windows (PowerShell):
+```powershell
+cd source\agents-api
+pytest tests/test_eval.py -q
+```
+POSIX:
 ```bash
-cd agents-api
-pip install -r requirements.txt pytest pytest-asyncio deepeval
-pytest tests/test_retrieval_service_read_only.py -q
-# DeepEval (online, opt-in via agents-api/.env.tests)
-# Example .env.tests:
-# RUN_DEEPEVAL=1
-# OPENAI_API_KEY=your_key
+cd source/agents-api
 pytest tests/test_eval.py -q
 ```
 
-### Run all service tests
-```bash
-cd auth && pytest tests -q
-cd ../dashboard-api && pytest tests -q
-cd ../agents-api && pytest tests -q
-```
+## Docs
+Start with:
+- `docs/diagram_index.md`
+- `docs/design_decisions.md`
+- `docs/ppt_creation_prompt.md`
 
-Note:
-- `tests/test_eval.py` uses DeepEval LLM metrics and runs only when:
-  - `RUN_DEEPEVAL=1` (for example via `agents-api/.env.tests`)
-  - `OPENAI_API_KEY` is set (for example via `agents-api/.env.tests`)
+## Quick Start
+If you want command-only onboarding, read:
+- `Start_Here.md`

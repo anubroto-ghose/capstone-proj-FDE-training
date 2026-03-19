@@ -33,12 +33,18 @@ Incident Description:
 Proposed Resolution:
 {proposed_resolution}
 
-Respond with a JSON object:
+Important constraints:
+- Be concise and practical.
+- Do NOT restate the whole incident.
+- Keep total response short (under 90 words).
+
+Respond with a JSON object using exactly this schema:
 {{
   "verdict": "APPROVED" | "NEEDS_IMPROVEMENT" | "REJECTED",
   "confidence_score": <0.0 to 1.0>,
-  "reasoning": "<brief explanation>",
-  "suggestions": "<what to improve, or 'None' if approved>"
+  "summary": "<max 22 words>",
+  "top_gaps": ["<max 10 words>", "<max 10 words>"],
+  "suggested_fix": "<max 18 words or 'None'>"
 }}
 """
     return _call_judge_llm(judge_prompt)

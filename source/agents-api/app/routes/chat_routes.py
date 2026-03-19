@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+import re
 from ..services.agent_session import get_session
 from ..utils.auth import get_current_user
 from ..utils.guardrails import guardrails
@@ -61,6 +62,19 @@ async def chat_with_agent(request: ChatRequest, current_user: dict = Depends(get
 
         # ── INPUT GUARDRAIL ──
         sanitized_input = guardrails.mask_pii(request.message)
+
+        # Deterministic escalation fallback for explicit user consent.
+        lower_msg = sanitized_input.lower()
+        wants_l2 = bool(re.search(r"(hand\s*(it\s*)?over|escalat|transfer).*(l2|technical specialist)", lower_msg))
+        wants_rca = bool(re.search(r"(hand\s*(it\s*)?over|escalat|transfer).*(rca|root cause)", lower_msg))
+        if current_agent_name == "L1 Support Specialist" and wants_l2:
+            starting_agent = l2_agent
+            await session.set_current_agent_name("L2 Technical Specialist")
+            logger.info(f"Explicit escalation detected | session={actual_session_id} | switched_to=L2")
+        elif current_agent_name in {"L1 Support Specialist", "L2 Technical Specialist"} and wants_rca:
+            starting_agent = rca_agent
+            await session.set_current_agent_name("RCA Specialist")
+            logger.info(f"Explicit escalation detected | session={actual_session_id} | switched_to=RCA")
 
         # ── Run the agent ──
         try:
